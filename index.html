@@ -613,9 +613,26 @@ function vTrendsHistorical(){
   var trhT0=histFilteredTotal();
   var rank=trhT0.slice().sort(function(a,b){return b[1]-a[1]}).map(function(r){return r[0]}).indexOf(m)+1;
   function kc(cls,k,v,s){return '<div class="kpi '+cls+'"><div class="edge"></div><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="s">'+s+'</div></div>'}
-  document.getElementById("view").innerHTML='<div style="background:#eef4ff;border:1px solid #d7e2ff;color:#2b3b63;border-radius:9px;padding:9px 13px;font-size:12px;margin-bottom:13px">\ud83d\udcc5 <b>Historical month</b> \u2014 daily throughput exists only for live months. Showing the monthly business trend for '+mLabel(m)+'.</div>'
+  // v19: user pushed back on "only 1 graph" for historical months -- fair. Daily throughput, best/
+  // worst days and backlog flow genuinely can't exist (the tracker that feeds them is a rolling
+  // daily snapshot that only ever covers the CURRENT live month -- past months were never captured
+  // at that grain, this isn't a display choice, the data itself doesn't exist). But that's not the
+  // only historical data available: HIST_LC carries (zone x location x client) totals for EVERY
+  // past month back to 2019 -- Overview's historical view already uses this for its own drill-down,
+  // it just was never wired into Trends too. Added a real second chart here: zone-wise business for
+  // the selected month, working-day-averaged (via wdOf) so different-length months are still
+  // comparable, same spirit as the live tab's "daily avg" framing even though this is monthly-grain.
+  var rowsZ=histRowsLC(m).filter(function(r){return inS(r.zone,st.zone)&&(!st.bm||r.bm===st.bm)&&(!st.cli||r.cli===st.cli)});
+  var wd=wdOf(m)||1;
+  var zoneAgg={}; rowsZ.forEach(function(r){zoneAgg[r.zone]=(zoneAgg[r.zone]||0)+r.v;});
+  var zoneArr=Object.keys(zoneAgg).map(function(z){return {z:z,tot:zoneAgg[z],avg:zoneAgg[z]/wd};}).sort(function(a,b){return b.tot-a.tot;}).slice(0,12);
+  document.getElementById("view").innerHTML='<div style="background:#eef4ff;border:1px solid #d7e2ff;color:#2b3b63;border-radius:9px;padding:9px 13px;font-size:12px;margin-bottom:13px">\ud83d\udcc5 <b>Historical month</b> \u2014 daily throughput, best/worst days and backlog flow only exist for live months (the daily tracker snapshot this dashboard reads never covered past months at that grain \u2014 there really is no day-by-day data to show, not a display choice). Zone-wise monthly totals below use full (zone \u00d7 location \u00d7 client) history instead.</div>'
     +'<div class="kpis">'+kc("navy","Business",fN(HT.cases),mLabel(m))+kc("good","Revenue",fR(HT.rev),"for the month")+kc(mom>=0?"good":"red","MoM growth",(mom==null?"\u2014":(mom>=0?"+":"")+mom+"%"),"vs prev month")+kc(yoy>=0?"good":"red","YoY growth",(yoy==null?"\u2014":(yoy>=0?"+":"")+yoy+"%"),"vs last year")+kc("navy","Rank",rank+"/"+trhT0.length,"busiest months")+'</div>'
-    +'<div class="card"><h3><span class="acc" style="background:var(--blue)"></span>Monthly business \u2014 long-term</h3><div class="sub">Full history, '+mLabel(m)+' highlighted</div><canvas id="trHist" height="78"></canvas></div>';
+    +'<div class="grid g11" style="margin-bottom:14px"><div class="card"><h3><span class="acc" style="background:var(--navy2)"></span>Business by zone, '+mLabel(m)+'</h3><div class="sub">Monthly total, working-day-averaged ('+wd+' working days this month) \u2014 click a bar to scope the whole app to that zone</div><div class="chartwrap"><canvas id="trHistZone" height="150"></canvas></div></div>'
+    +'<div class="card"><h3><span class="acc" style="background:var(--blue)"></span>Monthly business \u2014 long-term</h3><div class="sub">Full history, '+mLabel(m)+' highlighted</div><canvas id="trHist" height="78"></canvas></div></div>';
+  if(st.charts.trHistZone)st.charts.trHistZone.destroy();
+  document.getElementById("trHistZone").parentNode.style.height=Math.max(180,zoneArr.length*30)+"px";
+  st.charts.trHistZone=new Chart(document.getElementById("trHistZone"),{type:"bar",data:{labels:zoneArr.map(function(o){return cZ(o.z)}),datasets:[{data:zoneArr.map(function(o){return Math.round(o.avg)}),backgroundColor:"#0a1f6b",borderRadius:3}]},options:{indexAxis:"y",maintainAspectRatio:false,interaction:{mode:"y",intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){var o=zoneArr[c.dataIndex];return ["Per working day: "+fN(o.avg),"Month total: "+fN(o.tot)];}}}},onHover:function(e,els){e.native.target.style.cursor=els.length?"pointer":"default";},onClick:function(e,els){if(!els.length)return;scopeSet("zone",zoneArr[els[0].index].z);render();},scales:{x:{grid:{color:"#eef1f7"},ticks:{font:{family:"IBM Plex Mono",size:9}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
   var T=trhT0;
   st.charts.trHist=new Chart(document.getElementById("trHist"),{data:{labels:T.map(function(r){return r[0]}),datasets:[{label:"Cases (monthly)",type:"bar",data:T.map(function(r){return r[1]}),backgroundColor:T.map(function(r){return r[0]===m?"#2456e6":"#c9d8ff"}),borderRadius:2},{label:"Revenue",type:"line",data:T.map(function(r){return r[2]}),borderColor:"#16a34a",backgroundColor:"transparent",tension:.2,pointRadius:0,borderWidth:1.6,yAxisID:"y2"}]},options:{maintainAspectRatio:true,aspectRatio:(window.innerWidth<=768?1.3:2.2),plugins:{legend:{display:true,position:"bottom",labels:{boxWidth:11,font:{size:10.5}}}},scales:{y:{grid:{color:"#eef1f7"},ticks:{font:{family:"IBM Plex Mono",size:9}}},y2:{position:"right",grid:{display:false},ticks:{display:false}},x:{grid:{display:false},ticks:{font:{family:"IBM Plex Mono",size:8},maxTicksLimit:16}}}}});
 }
@@ -1341,9 +1358,17 @@ function renderSummary(){
   var analysis;
   if(!live)analysis="Historical month \u2014 showing recorded volumes for "+mLabel(st.month)+".";
   else analysis=(pace>=97?"On pace":pace>=85?"Behind pace":"Well behind")+" at "+pace+"% \u00b7 projecting "+fN(proj)+" ("+(tgt?Math.round(proj/tgt*100):0)+"% of target)"+(mom!=null?" \u00b7 "+(mom>=0?"up ":"down ")+Math.abs(mom)+"% vs June":"")+" \u00b7 "+fN(ov)+" overdue of "+fN(oc.length)+" open.";
+  // BUGFIX (v19): this chip used the tracker-only `cases` value (from snapRows()/BIZ) even for
+  // historical months. BIZ only ever carries daily-tracker rows for the CURRENT live month, so for
+  // any past month snapRows() finds no matching day and `cases` is silently 0 -- while the Open/
+  // Overdue chips right next to it (live MIS snapshot, correctly month-independent) still show real
+  // numbers, producing exactly the "Cases: 0 next to non-zero Open/Overdue" mismatch reported. The
+  // correct historical figure was already being computed two lines up as `casesHL` (HIST_LC-based,
+  // filter-aware, same source Overview/Trends' own historical views use) -- it just wasn't wired
+  // into this chip. Now uses casesHL whenever the selected month isn't live.
   el.innerHTML='<div class="smhead"><span class="smscope">'+scope+'</span><span class="smana">'+analysis+'</span></div>'
     +'<div class="smrow">'
-    +chip(live?"MTD cases":"Cases",fN(cases),null,mom!=null?dtag(mom)+" vs Jun":"")
+    +chip(live?"MTD cases":"Cases",fN(live?cases:casesHL),null,mom!=null?dtag(mom)+" vs Jun":"")
     +(live?chip("Target",fN(tgt),null,ach+"% achieved"):"")
     +(live?chip("Pace",pace+"%",pcol,"wd "+pm.wde+"/"+pm.wdt):"")
     +(live?chip("Projection",fN(proj),pcol,(tgt?Math.round(proj/tgt*100):0)+"% of target"):"")
